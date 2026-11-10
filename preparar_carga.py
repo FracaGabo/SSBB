@@ -49,11 +49,14 @@ def process(source, destination, year=2026):
   if not present(value) or str(value).strip().startswith('#'): return None
   return str(value).strip()
  history_sources=collections.defaultdict(set)
+ history_validity=collections.defaultdict(set)
  existing=collections.defaultdict(list)
  for n,r in enumerate(w['Base de datos Agua Reprocesada'].iter_rows(min_row=2,values_only=True),2):
   if not present(r[9]): continue
   source=source_value(r[20]) if len(r)>20 else None
   if source: history_sources[norm(r[9])].add(source)
+  validity=source_value(r[7])
+  if validity: history_validity[norm(r[9])].add(validity)
   d=r[10]
   if isinstance(d,(datetime.datetime,datetime.date)): y,m=d.year,d.month
   elif isinstance(r[18],(int,float)) and isinstance(r[19],(int,float)): y,m=int(r[19]),int(r[18])
@@ -79,6 +82,24 @@ def process(source, destination, year=2026):
    return [next(iter(historical)), 'Historial Agua Reprocesada (U); catálogo sin fuente', history_text]
   if historical: return [None, 'Revisar: varias fuentes históricas; catálogo sin fuente', history_text]
   return [None, 'Sin fuente disponible', None]
+ def validity_metadata(client):
+  if client is None: return ['Sin información', 'Sin cliente identificado', None]
+  entries=byid[norm(client[0])]
+  same_branch=[entry for entry in entries if norm(entry[2])==norm(client[2])]
+  catalog_states={source_value(entry[8]) for entry in (same_branch or entries) if source_value(entry[8])}
+  historical=history_validity[norm(client[0])]
+  history_text=' | '.join(sorted(historical)) or None
+  if len(catalog_states)==1:
+   state=next(iter(catalog_states))
+   criterion='BBDD N° Clientes (I)'
+   if historical and historical!={state}: criterion+='; difiere del historial'
+   return [state,criterion,history_text]
+  if len(catalog_states)>1:
+   return ['Revisar', 'Varias vigencias en catálogo: '+' | '.join(sorted(catalog_states)),history_text]
+  if len(historical)==1:
+   return [next(iter(historical)), 'Historial Agua Reprocesada (H); catálogo sin vigencia',history_text]
+  if historical: return ['Revisar','Varias vigencias históricas; catálogo sin vigencia',history_text]
+  return ['Sin información','Sin vigencia disponible',None]
  proposed=collections.defaultdict(list); review=[]; excluded=[]; mapping=[]; all_records=[]; counts=collections.Counter()
  for n,r in enumerate(w['Hoja1'].iter_rows(min_row=3,values_only=True),3):
   vals=[(m,v) for m,v in enumerate(r[11:21],1) if present(v)]
@@ -86,7 +107,7 @@ def process(source, destination, year=2026):
   if not vals: continue
   c,method=match(r)
   for m,value in vals:
-   all_records.append(([c[0] if c is not None else r[4],datetime.datetime(year,m,28),None,value,None,None,None,None,None]+information_source(c)+[r[4]],method if c is None else None))
+   all_records.append(([c[0] if c is not None else r[4],datetime.datetime(year,m,28),None,value,None,None,None,None,None]+information_source(c)+[r[4]]+validity_metadata(c),method if c is None else None))
   if c is None:
    for m,v in vals: review.append([n,r[2],r[3],r[4],None,datetime.datetime(year,m,28),v,method])
    continue
@@ -104,11 +125,11 @@ def process(source, destination, year=2026):
    for n,r,c,v,m,method in items: review.append([n,r[2],r[3],r[4],c[0],datetime.datetime(year,m,28),v,'Valores de origen distintos para el mismo cliente y mes'])
    continue
   n,r,c,v,m,method=first
-  rows.append([c[0],datetime.datetime(year,m,28),None,v,None,None,None,None,None]+information_source(c)+[r[4]])
+  rows.append([c[0],datetime.datetime(year,m,28),None,v,None,None,None,None,None]+information_source(c)+[r[4]]+validity_metadata(c))
   audit.append([c[0],datetime.datetime(year,m,28),v,', '.join(str(x[0]) for x in items),r[2],method])
   counts['duplicados_internos_omitidos']+=len(items)-1
  rows.sort(key=lambda x:(norm(x[0]),x[1])); audit.sort(key=lambda x:(norm(x[0]),x[1]))
- headers=list(next(w['Base de datos Agua Reprocesada'].values))[9:18]+['Fuente de información','Origen de la fuente','Fuentes en historial Agua','Número de cliente original Hoja1']
+ headers=list(next(w['Base de datos Agua Reprocesada'].values))[9:18]+['Fuente de información','Origen de la fuente','Fuentes en historial Agua','Número de cliente original Hoja1','Vigencia','Origen de vigencia','Vigencias en historial Agua']
  out=openpyxl.Workbook(); out.remove(out.active)
  from openpyxl.styles import Font, PatternFill
  from openpyxl.utils import get_column_letter
@@ -126,6 +147,8 @@ def process(source, destination, year=2026):
    s.column_dimensions[get_column_letter(i)].width=width
   return s
  sheet('Carga J-R',headers,rows)
+ active_rows=[row for row in rows if norm(row[13])=='VIGENTE']
+ sheet('Carga vigentes',headers,active_rows)
  all_records.sort(key=lambda item:(norm(item[0][0]),item[0][1]))
  all_sheet=sheet('Todos J-R',headers,[record for record,reason in all_records])
  from openpyxl.comments import Comment
@@ -138,8 +161,8 @@ def process(source, destination, year=2026):
  sheet('Ya existentes',['Fila Hoja1','Sucursal','Cliente catálogo','Fecha propuesta','Valor Hoja1','Filas base Agua','Consumos base Agua'],excluded)
  sheet('Trazabilidad',['Cliente catálogo','Fecha','Consumo o texto','Filas Hoja1','Sucursal','Método de correspondencia'],audit)
  sheet('Correspondencias',['Fila Hoja1','Sucursal origen','Código origen','Cliente origen','Cliente catálogo','Código catálogo','Sucursal catálogo','Método'],mapping)
- counts.update({'registros_totales':len(all_records),'registros_para_cargar':len(rows),'registros_ya_existentes':len(excluded),'registros_pendientes':len(review),'ceros_para_cargar':sum(isinstance(r[3],(int,float)) and r[3]==0 for r in rows),'textos_para_cargar':sum(isinstance(r[3],str) for r in rows)})
- notes=[['Año',year],['Cliente de carga','La columna A de Carga J-R usa exclusivamente el valor exacto del catálogo BBDD N° Clientes. La columna M es el identificador original de Hoja1, solo para comparación; no se carga.'],['Fuente de información','Columna J de la salida: fuente del catálogo (G). Si falta, se usa el historial (U) solo si tiene una única fuente. K explica el criterio y L muestra las fuentes históricas. No se excluyen registros por fuente.'],['Pegado de fuente','A:I de la salida corresponden a J:R del destino. Copiar J de la salida por separado a U del destino, conservando exactamente las mismas filas y filtros. K:M solo son auxiliares; no pegar A:M como bloque.'],['Todos J-R','Todos los datos no vacíos de Hoja1, incluidos períodos existentes y repeticiones de origen, ordenados por cliente y fecha. Solo para comparación: NO usar para cargar.'],['Clientes sin correspondencia','En Todos J-R conservan el cliente original y se resaltan en amarillo con un comentario. Revisar Pendientes.'],['Fechas','Día 28 de cada mes; fecha convencional, no fecha real de emisión.'],['Pegado','Copiar A2:I hasta la última fila de Carga J-R y pegar en J:R de la base destino.'],['Criterio duplicados','Cliente normalizado + año + mes. Se excluye si ya existe, aunque cambie el consumo.'],['Datos','Se conservan ceros y textos. Solo se omiten vacíos.'],['Campos vacíos','Documento, límite, sobreconsumo e importes: sin datos en Hoja1; no se inventan.'],['Sobreconsumo','Columna O vacía. Usar pegado que omita blancos si hay fórmulas que deban preservarse.'],['Pendientes','No están en Carga J-R. Requieren revisión antes de una eventual carga.']]+[[k,v] for k,v in counts.items()]
+ counts.update({'registros_para_cargar_vigentes':len(active_rows),'registros_totales':len(all_records),'registros_para_cargar':len(rows),'registros_ya_existentes':len(excluded),'registros_pendientes':len(review),'ceros_para_cargar':sum(isinstance(r[3],(int,float)) and r[3]==0 for r in rows),'textos_para_cargar':sum(isinstance(r[3],str) for r in rows)})
+ notes=[['Año',year],['Vigencia','N: Vigencia, O: origen, P: vigencias históricas. Se prioriza I del catálogo; si falta se usa H del historial solo cuando hay un único estado. Errores y vacíos no se consideran Vigente.'],['Carga vigentes','Solo faltantes con Vigencia igual a Vigente. Es la hoja recomendada si solo quieres cargar vigentes. Carga J-R conserva todos los faltantes para comparación.'],['Cliente de carga','La columna A de Carga J-R usa exclusivamente el valor exacto del catálogo BBDD N° Clientes. La columna M es el identificador original de Hoja1, solo para comparación; no se carga.'],['Fuente de información','Columna J de la salida: fuente del catálogo (G). Si falta, se usa el historial (U) solo si tiene una única fuente. K explica el criterio y L muestra las fuentes históricas. No se excluyen registros por fuente.'],['Pegado de fuente','A:I de la salida corresponden a J:R del destino. Copiar J de la salida por separado a U del destino, conservando exactamente las mismas filas y filtros. K:P solo son auxiliares; no pegar A:P como bloque.'],['Todos J-R','Todos los datos no vacíos de Hoja1, incluidos períodos existentes y repeticiones de origen, ordenados por cliente y fecha. Solo para comparación: NO usar para cargar.'],['Clientes sin correspondencia','En Todos J-R conservan el cliente original y se resaltan en amarillo con un comentario. Revisar Pendientes.'],['Fechas','Día 28 de cada mes; fecha convencional, no fecha real de emisión.'],['Pegado','Copiar A2:I hasta la última fila de Carga J-R y pegar en J:R de la base destino.'],['Criterio duplicados','Cliente normalizado + año + mes. Se excluye si ya existe, aunque cambie el consumo.'],['Datos','Se conservan ceros y textos. Solo se omiten vacíos.'],['Campos vacíos','Documento, límite, sobreconsumo e importes: sin datos en Hoja1; no se inventan.'],['Sobreconsumo','Columna O vacía. Usar pegado que omita blancos si hay fórmulas que deban preservarse.'],['Pendientes','No están en Carga J-R. Requieren revisión antes de una eventual carga.']]+[[k,v] for k,v in counts.items()]
  sheet('Instrucciones',['Concepto','Detalle'],notes)
  dest=Path(destination); dest.parent.mkdir(parents=True,exist_ok=True); out.save(dest)
  # Read-back validation of the actual output and reconciliation of all source cells.
@@ -153,6 +176,7 @@ def process(source, destination, year=2026):
   seen.add(key)
   if row[1].day!=28 or row[1].year!=year: raise ValueError('Fecha de salida incorrecta')
   if any(row[i] is not None for i in (2,4,5,6,7,8)): raise ValueError('Campos reservados no vacíos')
+ if list(v['Carga vigentes'].iter_rows(min_row=2,values_only=True))!=[row for row in actual if norm(row[13])=='VIGENTE']: raise ValueError('La carga de vigentes no coincide con el filtro de vigencia')
  if counts['celdas_con_datos']!=len(rows)+len(excluded)+len(review)+counts['duplicados_internos_omitidos']: raise ValueError('No cuadran los registros de entrada y salida')
  if len(all_records)!=counts['celdas_con_datos'] or v['Todos J-R'].max_row-1!=len(all_records): raise ValueError('Faltan registros en Todos J-R')
  print(json.dumps(dict(counts),ensure_ascii=False,indent=2))

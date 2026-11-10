@@ -136,3 +136,43 @@ class CargaTest(unittest.TestCase):
                         self.assertIsNone(r[9])
                         self.assertEqual(r[10],'Sin cliente identificado')
             result.close()
+
+    def test_validity_catalog_priority_fallback_unknown_and_active_sheet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, dest = Path(tmp)/'in.xlsx', Path(tmp)/'out.xlsx'
+            self.fixture(source)
+            w = openpyxl.load_workbook(source)
+            catalog=w['BBDD N° Clientes']
+            for row in catalog.iter_rows(min_row=2):
+                state={'123-4':'Vigente','GESTIONINFRA01':'No Vigente','GASTOCOMUN01':'No Valido','456-7':'#N/A'}.get(row[0].value)
+                if state: catalog.cell(row[0].row,9,state)
+            history=w['Base de datos Agua Reprocesada']
+            history.cell(2,8,'No Vigente')
+            for client,state,month in [('456-7','Vigente',1),('777-8','Vigente',1),('777-8','No Vigente',2)]:
+                row=[None]*21
+                row[7],row[9],row[10]=state,client,datetime.datetime(2025,month,1)
+                history.append(row)
+            w.save(source)
+            w.close()
+            with contextlib.redirect_stdout(io.StringIO()):
+                counts=process(source,dest)
+            result=openpyxl.load_workbook(dest,read_only=True)
+            rows=list(result['Carga J-R'].iter_rows(min_row=2,values_only=True))
+            active=list(result['Carga vigentes'].iter_rows(min_row=2,values_only=True))
+            self.assertEqual(active,[r for r in rows if r[13]=='Vigente'])
+            self.assertEqual({r[0] for r in active},{'123-4','456-7'})
+            self.assertEqual(counts['registros_para_cargar_vigentes'],3)
+            for r in rows:
+                if r[0]=='123-4':
+                    self.assertEqual(r[13],'Vigente')
+                    self.assertIn('difiere del historial',r[14])
+                    self.assertEqual(r[15],'No Vigente')
+                elif r[0]=='456-7':
+                    self.assertEqual(r[13],'Vigente')
+                    self.assertIn('catálogo sin vigencia',r[14])
+                elif r[0]=='777-8': self.assertEqual(r[13],'Revisar')
+                elif r[0]=='GESTIONINFRA01': self.assertEqual(r[13],'No Vigente')
+                elif r[0]=='GASTOCOMUN01': self.assertEqual(r[13],'No Valido')
+            unknown=[r for r in result['Todos J-R'].iter_rows(min_row=2,values_only=True) if r[0]=='DESCONOCIDO']
+            self.assertEqual(unknown[0][13],'Sin información')
+            result.close()
