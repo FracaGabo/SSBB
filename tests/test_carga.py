@@ -58,6 +58,16 @@ class CargaTest(unittest.TestCase):
             self.assertEqual({r[0] for r in rows}, {'123-4','GESTIONINFRA01','GASTOCOMUN01','456-7','777-8'})
             self.assertTrue(all(r[1].day == 28 for r in rows))
             self.assertTrue(all(r[5] is None for r in rows))
+            all_rows = list(result['Todos J-R'].iter_rows(min_row=2, values_only=True))
+            self.assertEqual(counts['registros_totales'], 11)
+            self.assertEqual(len(all_rows), 11)
+            self.assertEqual(tuple(result['Todos J-R'].values)[0], tuple(result['Carga J-R'].values)[0])
+            # Existing period keeps the input value (8), not the historical value (99).
+            self.assertIn(('123-4', datetime.datetime(2026,1,28), None, 8, None, None, None, None, None), all_rows)
+            self.assertEqual(sum(r[0]=='123-4' and r[3]==0 for r in all_rows), 2)
+            self.assertEqual({r[3] for r in all_rows if r[0]=='222-2'}, {1,2})
+            self.assertTrue(any(r[0]=='DESCONOCIDO' and r[3]==3 for r in all_rows))
+            self.assertTrue(any(r[3]=='PAGA FUNCIONARIO' for r in all_rows))
             result.close()
 
     def test_reject_incompatible_workbook(self):

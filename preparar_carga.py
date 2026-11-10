@@ -53,12 +53,14 @@ def process(source, destination, year=2026):
   elif isinstance(r[18],(int,float)) and isinstance(r[19],(int,float)): y,m=int(r[19]),int(r[18])
   else: continue
   existing[(norm(r[9]),y,m)].append((n,r[12]))
- proposed=collections.defaultdict(list); review=[]; excluded=[]; mapping=[]; counts=collections.Counter()
+ proposed=collections.defaultdict(list); review=[]; excluded=[]; mapping=[]; all_records=[]; counts=collections.Counter()
  for n,r in enumerate(w['Hoja1'].iter_rows(min_row=3,values_only=True),3):
   vals=[(m,v) for m,v in enumerate(r[11:21],1) if present(v)]
   counts['celdas_con_datos']+=len(vals)
   if not vals: continue
   c,method=match(r)
+  for m,value in vals:
+   all_records.append(([c[0] if c is not None else r[4],datetime.datetime(year,m,28),None,value,None,None,None,None,None],method if c is None else None))
   if c is None:
    for m,v in vals: review.append([n,r[2],r[3],r[4],None,datetime.datetime(year,m,28),v,method])
    continue
@@ -98,12 +100,20 @@ def process(source, destination, year=2026):
    s.column_dimensions[get_column_letter(i)].width=width
   return s
  sheet('Carga J-R',headers,rows)
+ all_records.sort(key=lambda item:(norm(item[0][0]),item[0][1]))
+ all_sheet=sheet('Todos J-R',headers,[record for record,reason in all_records])
+ from openpyxl.comments import Comment
+ for row_number,(record,reason) in enumerate(all_records,2):
+  if reason:
+   for cell in all_sheet[row_number]:
+    cell.fill=PatternFill('solid',fgColor='FFF2CC')
+   all_sheet.cell(row_number,1).comment=Comment('Cliente original de Hoja1 sin correspondencia segura: '+reason+'. Revisar Pendientes; no usar esta fila para cargar.', 'SSBB')
  sheet('Pendientes',['Fila Hoja1','Sucursal','Código sucursal','Cliente origen','Cliente catálogo','Fecha','Consumo o texto','Motivo'],review)
  sheet('Ya existentes',['Fila Hoja1','Sucursal','Cliente catálogo','Fecha propuesta','Valor Hoja1','Filas base Agua','Consumos base Agua'],excluded)
  sheet('Trazabilidad',['Cliente catálogo','Fecha','Consumo o texto','Filas Hoja1','Sucursal','Método de correspondencia'],audit)
  sheet('Correspondencias',['Fila Hoja1','Sucursal origen','Código origen','Cliente origen','Cliente catálogo','Código catálogo','Sucursal catálogo','Método'],mapping)
- counts.update({'registros_para_cargar':len(rows),'registros_ya_existentes':len(excluded),'registros_pendientes':len(review),'ceros_para_cargar':sum(isinstance(r[3],(int,float)) and r[3]==0 for r in rows),'textos_para_cargar':sum(isinstance(r[3],str) for r in rows)})
- notes=[['Año',year],['Fechas','Día 28 de cada mes; fecha convencional, no fecha real de emisión.'],['Pegado','Copiar A2:I hasta la última fila de Carga J-R y pegar en J:R de la base destino.'],['Criterio duplicados','Cliente normalizado + año + mes. Se excluye si ya existe, aunque cambie el consumo.'],['Datos','Se conservan ceros y textos. Solo se omiten vacíos.'],['Campos vacíos','Documento, límite, sobreconsumo e importes: sin datos en Hoja1; no se inventan.'],['Sobreconsumo','Columna O vacía. Usar pegado que omita blancos si hay fórmulas que deban preservarse.'],['Pendientes','No están en Carga J-R. Requieren revisión antes de una eventual carga.']]+[[k,v] for k,v in counts.items()]
+ counts.update({'registros_totales':len(all_records),'registros_para_cargar':len(rows),'registros_ya_existentes':len(excluded),'registros_pendientes':len(review),'ceros_para_cargar':sum(isinstance(r[3],(int,float)) and r[3]==0 for r in rows),'textos_para_cargar':sum(isinstance(r[3],str) for r in rows)})
+ notes=[['Año',year],['Todos J-R','Todos los datos no vacíos de Hoja1, incluidos períodos existentes y repeticiones de origen, ordenados por cliente y fecha. Solo para comparación: NO usar para cargar.'],['Clientes sin correspondencia','En Todos J-R conservan el cliente original y se resaltan en amarillo con un comentario. Revisar Pendientes.'],['Fechas','Día 28 de cada mes; fecha convencional, no fecha real de emisión.'],['Pegado','Copiar A2:I hasta la última fila de Carga J-R y pegar en J:R de la base destino.'],['Criterio duplicados','Cliente normalizado + año + mes. Se excluye si ya existe, aunque cambie el consumo.'],['Datos','Se conservan ceros y textos. Solo se omiten vacíos.'],['Campos vacíos','Documento, límite, sobreconsumo e importes: sin datos en Hoja1; no se inventan.'],['Sobreconsumo','Columna O vacía. Usar pegado que omita blancos si hay fórmulas que deban preservarse.'],['Pendientes','No están en Carga J-R. Requieren revisión antes de una eventual carga.']]+[[k,v] for k,v in counts.items()]
  sheet('Instrucciones',['Concepto','Detalle'],notes)
  dest=Path(destination); dest.parent.mkdir(parents=True,exist_ok=True); out.save(dest)
  # Read-back validation of the actual output and reconciliation of all source cells.
@@ -116,6 +126,7 @@ def process(source, destination, year=2026):
   if row[1].day!=28 or row[1].year!=year: raise ValueError('Fecha de salida incorrecta')
   if any(row[i] is not None for i in (2,4,5,6,7,8)): raise ValueError('Campos reservados no vacíos')
  if counts['celdas_con_datos']!=len(rows)+len(excluded)+len(review)+counts['duplicados_internos_omitidos']: raise ValueError('No cuadran los registros de entrada y salida')
+ if len(all_records)!=counts['celdas_con_datos'] or v['Todos J-R'].max_row-1!=len(all_records): raise ValueError('Faltan registros en Todos J-R')
  print(json.dumps(dict(counts),ensure_ascii=False,indent=2))
  print('PENDIENTES POR SUCURSAL')
  for x in sorted({(r[0],str(r[1]),str(r[3]),r[7]) for r in review}): print(x)

@@ -58,6 +58,7 @@ Se leen valores guardados de Excel, no se calculan fórmulas. Si el archivo cont
 ## Resultado y pegado
 
 - **Carga J-R:** nueve columnas A:I equivalentes a las columnas J:R de la base. Copia desde A2 hasta I de la última fila de datos y pega en J:R del destino. Si no hay datos, no hay filas que copiar.
+- **Todos J-R:** todos los datos no vacíos de Hoja1 en las mismas nueve columnas, ordenados por cliente y fecha. Incluye períodos existentes, faltantes, repeticiones y valores conflictivos de origen, conservando ceros y textos. Es una hoja de comparación; **no debe pegarse como carga**. Los clientes sin correspondencia segura conservan el identificador original, resaltado en amarillo y con un comentario; también aparecen en Pendientes. No es una copia de todo el historial de la base: representa los registros de Hoja1.
 - **Pendientes:** registros que requieren resolver una correspondencia o conflicto; no se incluyen en la carga.
 - **Ya existentes:** registros excluidos y referencias a filas del historial.
 - **Trazabilidad** y **Correspondencias:** origen y método de asignación de los registros.
