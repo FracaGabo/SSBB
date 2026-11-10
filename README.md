@@ -57,6 +57,8 @@ Se leen valores guardados de Excel, no se calculan fórmulas. Si el archivo cont
 
 ## Resultado y pegado
 
+**Identificador para cargar:** A de `Carga J-R` siempre contiene el número de cliente exacto del catálogo `BBDD N° Clientes`, sin reemplazarlo por el valor original de Hoja1 ni por su versión normalizada. El programa verifica que cada identificador de carga exista en ese catálogo, distinguiendo texto de número. El identificador original se muestra aparte en M. Los clientes sin correspondencia segura aparecen en Pendientes y nunca en Carga J-R. En Todos J-R esos casos conservan el original en A y M, resaltados en amarillo; esa hoja es solo para comparación.
+
 - **Carga J-R:** las primeras nueve columnas A:I equivalentes a las columnas J:R de la base. Copia desde A2 hasta I de la última fila de datos y pega en J:R del destino. Si no hay datos, no hay filas que copiar.
 - **Todos J-R:** todos los datos no vacíos de Hoja1 con las mismas columnas de carga y de fuente, ordenados por cliente y fecha. Incluye períodos existentes, faltantes, repeticiones y valores conflictivos de origen, conservando ceros y textos. Es una hoja de comparación; **no debe pegarse como carga**. Los clientes sin correspondencia segura conservan el identificador original, resaltado en amarillo y con un comentario; también aparecen en Pendientes. No es una copia de todo el historial de la base: representa los registros de Hoja1.
 - **Pendientes:** registros que requieren resolver una correspondencia o conflicto; no se incluyen en la carga.
@@ -64,17 +66,18 @@ Se leen valores guardados de Excel, no se calculan fórmulas. Si el archivo cont
 - **Trazabilidad** y **Correspondencias:** origen y método de asignación de los registros.
 - **Instrucciones:** criterios y recuentos.
 
-En **Carga J-R** y **Todos J-R** se agregan tres columnas filtrables después de las nueve originales:
+En **Carga J-R** y **Todos J-R** se agregan cuatro columnas filtrables después de las nueve originales:
 
 | Columna de salida | Contenido | Uso |
 | --- | --- | --- |
 | J | Fuente de información | Clasificación del cliente, por ejemplo `Casa Funcionarios no se considera` |
 | K | Origen de la fuente | Explica qué base se usó y advierte diferencias o ambigüedad |
 | L | Fuentes en historial Agua | Todas las clasificaciones distintas encontradas para ese cliente en el historial |
+| M | Número de cliente original Hoja1 | Identificador recibido, solo para comparación; no se carga |
 
 La fuente se obtiene primero de G de **BBDD N° Clientes**. Si no existe, se utiliza U de **Base de datos Agua Reprocesada** solo cuando hay una única fuente histórica. Si hay varias fuentes en el catálogo o, a falta de catálogo, varias fuentes históricas, J queda vacía y K indica que debe revisarse. No se elige una fuente arbitrariamente ni se excluyen automáticamente clientes por su clasificación. `#N/A` y otros valores de error no se tratan como fuentes válidas. Las fuentes históricas se consultan en todos los años disponibles, no solo en el año de la carga.
 
-**Pegado:** copia A:I de la salida en J:R del destino, como antes. Si también quieres cargar la fuente, copia **J de la salida a U del destino** por separado, usando exactamente las mismas filas y filtros. K:L son auxiliares. No pegues A:L como un bloque: S:T del destino corresponden a mes y año, no a fuente.
+**Pegado:** copia A:I de la salida en J:R del destino, como antes. Si también quieres cargar la fuente, copia **J de la salida a U del destino** por separado, usando exactamente las mismas filas y filtros. K:M son auxiliares. No pegues A:M como un bloque: S:T del destino corresponden a mes y año, no a fuente.
 
 La columna F del resultado corresponde a **O (Sobre consumo)** del destino y queda vacía. Al pegar, utiliza las opciones apropiadas para conservar las fórmulas del destino (por ejemplo, omitir blancos). No se añaden automáticamente fórmulas ni filas a la base original.
 

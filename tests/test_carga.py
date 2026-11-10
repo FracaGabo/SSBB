@@ -58,6 +58,12 @@ class CargaTest(unittest.TestCase):
             self.assertEqual({r[0] for r in rows}, {'123-4','GESTIONINFRA01','GASTOCOMUN01','456-7','777-8'})
             self.assertTrue(all(r[1].day == 28 for r in rows))
             self.assertTrue(all(r[5] is None for r in rows))
+            original_clients = {r[0]: r[12] for r in rows}
+            self.assertEqual(original_clients['GESTIONINFRA01'], 'GESTION INFRAESTRUCTURA')
+            self.assertEqual(original_clients['GASTOCOMUN01'], 'GASTO COMUN')
+            self.assertEqual(original_clients['456-7'], '999/456-7')
+            self.assertEqual(original_clients['777-8'], '777')
+            self.assertNotIn('999/456-7', {r[0] for r in rows})
             all_rows = list(result['Todos J-R'].iter_rows(min_row=2, values_only=True))
             self.assertEqual(counts['registros_totales'], 11)
             self.assertEqual(len(all_rows), 11)

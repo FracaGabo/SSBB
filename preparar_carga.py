@@ -86,7 +86,7 @@ def process(source, destination, year=2026):
   if not vals: continue
   c,method=match(r)
   for m,value in vals:
-   all_records.append(([c[0] if c is not None else r[4],datetime.datetime(year,m,28),None,value,None,None,None,None,None]+information_source(c),method if c is None else None))
+   all_records.append(([c[0] if c is not None else r[4],datetime.datetime(year,m,28),None,value,None,None,None,None,None]+information_source(c)+[r[4]],method if c is None else None))
   if c is None:
    for m,v in vals: review.append([n,r[2],r[3],r[4],None,datetime.datetime(year,m,28),v,method])
    continue
@@ -104,11 +104,11 @@ def process(source, destination, year=2026):
    for n,r,c,v,m,method in items: review.append([n,r[2],r[3],r[4],c[0],datetime.datetime(year,m,28),v,'Valores de origen distintos para el mismo cliente y mes'])
    continue
   n,r,c,v,m,method=first
-  rows.append([c[0],datetime.datetime(year,m,28),None,v,None,None,None,None,None]+information_source(c))
+  rows.append([c[0],datetime.datetime(year,m,28),None,v,None,None,None,None,None]+information_source(c)+[r[4]])
   audit.append([c[0],datetime.datetime(year,m,28),v,', '.join(str(x[0]) for x in items),r[2],method])
   counts['duplicados_internos_omitidos']+=len(items)-1
  rows.sort(key=lambda x:(norm(x[0]),x[1])); audit.sort(key=lambda x:(norm(x[0]),x[1]))
- headers=list(next(w['Base de datos Agua Reprocesada'].values))[9:18]+['Fuente de información','Origen de la fuente','Fuentes en historial Agua']
+ headers=list(next(w['Base de datos Agua Reprocesada'].values))[9:18]+['Fuente de información','Origen de la fuente','Fuentes en historial Agua','Número de cliente original Hoja1']
  out=openpyxl.Workbook(); out.remove(out.active)
  from openpyxl.styles import Font, PatternFill
  from openpyxl.utils import get_column_letter
@@ -139,13 +139,15 @@ def process(source, destination, year=2026):
  sheet('Trazabilidad',['Cliente catálogo','Fecha','Consumo o texto','Filas Hoja1','Sucursal','Método de correspondencia'],audit)
  sheet('Correspondencias',['Fila Hoja1','Sucursal origen','Código origen','Cliente origen','Cliente catálogo','Código catálogo','Sucursal catálogo','Método'],mapping)
  counts.update({'registros_totales':len(all_records),'registros_para_cargar':len(rows),'registros_ya_existentes':len(excluded),'registros_pendientes':len(review),'ceros_para_cargar':sum(isinstance(r[3],(int,float)) and r[3]==0 for r in rows),'textos_para_cargar':sum(isinstance(r[3],str) for r in rows)})
- notes=[['Año',year],['Fuente de información','Columna J de la salida: fuente del catálogo (G). Si falta, se usa el historial (U) solo si tiene una única fuente. K explica el criterio y L muestra las fuentes históricas. No se excluyen registros por fuente.'],['Pegado de fuente','A:I de la salida corresponden a J:R del destino. Copiar J de la salida por separado a U del destino, conservando exactamente las mismas filas y filtros. K:L solo son auxiliares; no pegar A:L como bloque.'],['Todos J-R','Todos los datos no vacíos de Hoja1, incluidos períodos existentes y repeticiones de origen, ordenados por cliente y fecha. Solo para comparación: NO usar para cargar.'],['Clientes sin correspondencia','En Todos J-R conservan el cliente original y se resaltan en amarillo con un comentario. Revisar Pendientes.'],['Fechas','Día 28 de cada mes; fecha convencional, no fecha real de emisión.'],['Pegado','Copiar A2:I hasta la última fila de Carga J-R y pegar en J:R de la base destino.'],['Criterio duplicados','Cliente normalizado + año + mes. Se excluye si ya existe, aunque cambie el consumo.'],['Datos','Se conservan ceros y textos. Solo se omiten vacíos.'],['Campos vacíos','Documento, límite, sobreconsumo e importes: sin datos en Hoja1; no se inventan.'],['Sobreconsumo','Columna O vacía. Usar pegado que omita blancos si hay fórmulas que deban preservarse.'],['Pendientes','No están en Carga J-R. Requieren revisión antes de una eventual carga.']]+[[k,v] for k,v in counts.items()]
+ notes=[['Año',year],['Cliente de carga','La columna A de Carga J-R usa exclusivamente el valor exacto del catálogo BBDD N° Clientes. La columna M es el identificador original de Hoja1, solo para comparación; no se carga.'],['Fuente de información','Columna J de la salida: fuente del catálogo (G). Si falta, se usa el historial (U) solo si tiene una única fuente. K explica el criterio y L muestra las fuentes históricas. No se excluyen registros por fuente.'],['Pegado de fuente','A:I de la salida corresponden a J:R del destino. Copiar J de la salida por separado a U del destino, conservando exactamente las mismas filas y filtros. K:M solo son auxiliares; no pegar A:M como bloque.'],['Todos J-R','Todos los datos no vacíos de Hoja1, incluidos períodos existentes y repeticiones de origen, ordenados por cliente y fecha. Solo para comparación: NO usar para cargar.'],['Clientes sin correspondencia','En Todos J-R conservan el cliente original y se resaltan en amarillo con un comentario. Revisar Pendientes.'],['Fechas','Día 28 de cada mes; fecha convencional, no fecha real de emisión.'],['Pegado','Copiar A2:I hasta la última fila de Carga J-R y pegar en J:R de la base destino.'],['Criterio duplicados','Cliente normalizado + año + mes. Se excluye si ya existe, aunque cambie el consumo.'],['Datos','Se conservan ceros y textos. Solo se omiten vacíos.'],['Campos vacíos','Documento, límite, sobreconsumo e importes: sin datos en Hoja1; no se inventan.'],['Sobreconsumo','Columna O vacía. Usar pegado que omita blancos si hay fórmulas que deban preservarse.'],['Pendientes','No están en Carga J-R. Requieren revisión antes de una eventual carga.']]+[[k,v] for k,v in counts.items()]
  sheet('Instrucciones',['Concepto','Detalle'],notes)
  dest=Path(destination); dest.parent.mkdir(parents=True,exist_ok=True); out.save(dest)
  # Read-back validation of the actual output and reconciliation of all source cells.
  v=openpyxl.load_workbook(dest,read_only=True,data_only=False)
  actual=list(v['Carga J-R'].iter_rows(min_row=2,values_only=True)); seen=set()
+ catalog_identifiers={(isinstance(c[0],str),c[0]) for c in cat}
  for row in actual:
+  if (isinstance(row[0],str),row[0]) not in catalog_identifiers: raise ValueError('Cliente de carga no pertenece exactamente a BBDD N° Clientes')
   key=(norm(row[0]),row[1].year,row[1].month)
   if key in existing or key in seen: raise ValueError('Duplicado detectado al verificar la salida')
   seen.add(key)
