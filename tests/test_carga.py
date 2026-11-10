@@ -63,7 +63,7 @@ class CargaTest(unittest.TestCase):
             self.assertEqual(len(all_rows), 11)
             self.assertEqual(tuple(result['Todos J-R'].values)[0], tuple(result['Carga J-R'].values)[0])
             # Existing period keeps the input value (8), not the historical value (99).
-            self.assertIn(('123-4', datetime.datetime(2026,1,28), None, 8, None, None, None, None, None), all_rows)
+            self.assertIn(('123-4', datetime.datetime(2026,1,28), None, 8, None, None, None, None, None), [r[:9] for r in all_rows])
             self.assertEqual(sum(r[0]=='123-4' and r[3]==0 for r in all_rows), 2)
             self.assertEqual({r[3] for r in all_rows if r[0]=='222-2'}, {1,2})
             self.assertTrue(any(r[0]=='DESCONOCIDO' and r[3]==3 for r in all_rows))
@@ -89,4 +89,44 @@ class CargaTest(unittest.TestCase):
             self.assertEqual(counts['registros_ya_existentes'], 0)
             result = openpyxl.load_workbook(dest, read_only=True)
             self.assertTrue(all(r[1].year == 2027 for r in result['Carga J-R'].iter_rows(min_row=2,values_only=True)))
+            result.close()
+
+
+    def test_information_source_catalog_priority_history_and_ambiguity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, dest = Path(tmp)/'in.xlsx', Path(tmp)/'out.xlsx'
+            self.fixture(source)
+            w = openpyxl.load_workbook(source)
+            catalog = w['BBDD N° Clientes']
+            catalog.cell(2,7,'Casa Funcionarios no se considera')
+            history = w['Base de datos Agua Reprocesada']
+            history.cell(2,21,'Planilla SSBB')
+            def historical(client, month, value):
+                row = [None]*21
+                row[9], row[10], row[20] = client, datetime.datetime(2025,month,1), value
+                history.append(row)
+            historical('777-8',1,'Gestión telefónica')
+            historical('456-7',1,'Planilla SSBB')
+            historical('456-7',2,'Sucursal virtual')
+            w.save(source)
+            w.close()
+            with contextlib.redirect_stdout(io.StringIO()):
+                process(source,dest)
+            result = openpyxl.load_workbook(dest,read_only=True)
+            for sheet in ('Carga J-R','Todos J-R'):
+                rows = list(result[sheet].iter_rows(min_row=2,values_only=True))
+                for r in rows:
+                    if r[0]=='123-4':
+                        self.assertEqual(r[9],'Casa Funcionarios no se considera')
+                        self.assertIn('difiere del historial',r[10])
+                        self.assertEqual(r[11],'Planilla SSBB')
+                    elif r[0]=='777-8':
+                        self.assertEqual(r[9],'Gestión telefónica')
+                        self.assertIn('catálogo sin fuente',r[10])
+                    elif r[0]=='456-7':
+                        self.assertIsNone(r[9])
+                        self.assertIn('varias fuentes históricas',r[10])
+                    elif r[0]=='DESCONOCIDO':
+                        self.assertIsNone(r[9])
+                        self.assertEqual(r[10],'Sin cliente identificado')
             result.close()
